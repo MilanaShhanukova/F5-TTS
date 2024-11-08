@@ -83,19 +83,87 @@ def list_str_to_tensor(text: list[str], padding_value=-1) -> int["b nt"]:  # noq
     text = pad_sequence(list_tensors, padding_value=padding_value, batch_first=True)
     return text
 
+def char_to_num(text: str, vocab_char_map):
+    tokens = [vocab_char_map.get(c, 0) for c in text]
+    tokens = torch.tensor(tokens)
+    return tokens
 
-# char tokenizer, based on custom dataset's extracted .txt file
+
+def transform_text_to_ipa(text,
+                        vocab_char_map):
+    # tokenize including the multi-char ipa tokens
+    tokens = []
+    i = 0
+    if isinstance(text, list):
+        text = "".join(text)
+
+    while i < len(text):
+        # Check for multi-character tokens (longest match first)
+        match_found = False
+        for symbol in sorted(vocab_char_map.keys(), key=len, reverse=True):
+            if text[i:i+len(symbol)] == symbol:
+                tokens.append(vocab_char_map[symbol])
+                i += len(symbol)
+                match_found = True
+                break
+        if not match_found:
+            tokens.append(0)
+            i += 1
+    tokens = torch.tensor(tokens)
+    return tokens
+
+
 def list_str_to_idx(
     text: list[str] | list[list[str]],
     vocab_char_map: dict[str, int],  # {char: idx}
-    padding_value=-1,
-) -> int["b nt"]:  # noqa: F722
-    list_idx_tensors = [torch.tensor([vocab_char_map.get(c, 0) for c in t]) for t in text]  # pinyin or char style
-    text = pad_sequence(list_idx_tensors, padding_value=padding_value, batch_first=True)
+    tokenizer_type: str,
+    padding_value = -1
+) -> int['b nt']:
+    if tokenizer_type == "char":
+        list_idx_tensors = [char_to_num(t, vocab_char_map) for t in text]  # pinyin or char style
+    elif tokenizer_type == "ipa":
+        list_idx_tensors = [transform_text_to_ipa(t, vocab_char_map) for t in text]
+
+    text = pad_sequence(list_idx_tensors, padding_value = padding_value, batch_first = True)
     return text
 
 
+def split_text_to_ipa(text,
+                    vocab_char_map):
+    # tokenize including the multi-char ipa tokens
+    tokens = []
+    i = 0
+    while i < len(text):
+        # Check for multi-character tokens (longest match first)
+        match_found = False
+        for symbol in sorted(vocab_char_map.keys(), key=len, reverse=True):
+            if text[i:i+len(symbol)] == symbol:
+                tokens.append(symbol)
+                i += len(symbol)
+                match_found = True
+                break
+        if not match_found:
+            # tokens.append(0)
+            i += 1
+    # tokens = torch.tensor(tokens)
+    return tokens
+
+
 # Get tokenizer
+
+def load_tokenizer(vocab_file_path, golden_vocab={}):
+    with open(vocab_file_path, "r") as f:
+        all_symbols = f.read().splitlines()
+
+        for i, char in enumerate(all_symbols):
+            if char not in golden_vocab and char not in golden_vocab:
+                golden_vocab[char] = len(golden_vocab)
+
+    import json
+    with open('vocab_mapping.json', 'w', encoding='utf-8') as json_file:
+        json.dump(golden_vocab, json_file, ensure_ascii=False, indent=4)
+
+    return golden_vocab, len(golden_vocab)
 
 
 def get_tokenizer(dataset_name, tokenizer: str = "pinyin"):
@@ -108,13 +176,10 @@ def get_tokenizer(dataset_name, tokenizer: str = "pinyin"):
                 - if use "char", derived from unfiltered character & symbol counts of custom dataset
                 - if use "byte", set to 256 (unicode byte range)
     """
-    if tokenizer in ["pinyin", "char"]:
+    if tokenizer in ["pinyin", "char", "ipa"]:
         tokenizer_path = os.path.join(files("f5_tts").joinpath("../../data"), f"{dataset_name}_{tokenizer}/vocab.txt")
-        with open(tokenizer_path, "r", encoding="utf-8") as f:
-            vocab_char_map = {}
-            for i, char in enumerate(f):
-                vocab_char_map[char[:-1]] = i
-        vocab_size = len(vocab_char_map)
+        dataset_path = os.path.abspath(tokenizer_path)
+        vocab_char_map, vocab_size = load_tokenizer(dataset_path)
         assert vocab_char_map[" "] == 0, "make sure space is of idx 0 in vocab.txt, cuz 0 is used for unknown char"
 
     elif tokenizer == "byte":
@@ -122,16 +187,16 @@ def get_tokenizer(dataset_name, tokenizer: str = "pinyin"):
         vocab_size = 256
 
     elif tokenizer == "custom":
-        with open(dataset_name, "r", encoding="utf-8") as f:
-            vocab_char_map = {}
-            for i, char in enumerate(f):
-                vocab_char_map[char[:-1]] = i
-        vocab_size = len(vocab_char_map)
+        vocab_char_map, vocab_size = load_tokenizer(dataset_path)
 
     return vocab_char_map, vocab_size
 
 
 # convert char to pinyin
+
+def convert_char_to_ipa(text_list, vocab_char_map):
+    texts = [split_text_to_ipa(text, vocab_char_map) for text in text_list]
+    return texts
 
 
 def convert_char_to_pinyin(text_list, polyphone=True):
@@ -183,3 +248,38 @@ def repetition_found(text, length=2, tolerance=10):
         if count > tolerance:
             return True
     return False
+
+
+def expand_model_embeddings(ckpt_path: str, new_ckpt_path: str, vocab_size: int):
+    seed = 666
+    random.seed(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    ckpt = torch.load(ckpt_path, map_location="cpu")
+    ema_sd = ckpt.get("ema_model_state_dict", {})
+    embed_key_ema = "ema_model.transformer.text_embed.text_embed.weight"
+    old_embed_ema = ema_sd[embed_key_ema]
+    vocab_old = old_embed_ema.size(0)
+    embed_dim = old_embed_ema.size(1)
+
+    vocab_size += 1 # include the filler token
+
+    def expand_embeddings(old_embeddings):
+        new_embeddings = torch.zeros((vocab_size, embed_dim))
+        new_embeddings[:vocab_old] = old_embeddings
+        
+        add_tokens = vocab_size - vocab_old
+
+        new_embeddings[vocab_old:] = torch.randn((add_tokens, embed_dim))
+        return new_embeddings
+    
+    if vocab_size > vocab_old:
+        print(f"Expanding the tokens {new_ckpt_path}, from {vocab_old} to {vocab_size}")
+        ema_sd[embed_key_ema] = expand_embeddings(ema_sd[embed_key_ema])
+        torch.save(ckpt, new_ckpt_path)
+        return new_ckpt_path
+    return ckpt_path

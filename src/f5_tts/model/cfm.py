@@ -46,6 +46,7 @@ class CFM(nn.Module):
         mel_spec_kwargs: dict = dict(),
         frac_lengths_mask: tuple[float, float] = (0.7, 1.0),
         vocab_char_map: dict[str:int] | None = None,
+        tokenizer_type: str = "char"
     ):
         super().__init__()
 
@@ -73,6 +74,7 @@ class CFM(nn.Module):
 
         # vocab map for tokenization
         self.vocab_char_map = vocab_char_map
+        self.tokenizer_type = tokenizer_type
 
     @property
     def device(self):
@@ -115,7 +117,7 @@ class CFM(nn.Module):
 
         if isinstance(text, list):
             if exists(self.vocab_char_map):
-                text = list_str_to_idx(text, self.vocab_char_map).to(device)
+                text = list_str_to_idx(text, self.vocab_char_map, self.tokenizer_type).to(device)
             else:
                 text = list_str_to_tensor(text).to(device)
             assert text.shape[0] == batch
@@ -228,7 +230,7 @@ class CFM(nn.Module):
         # handle text as string
         if isinstance(text, list):
             if exists(self.vocab_char_map):
-                text = list_str_to_idx(text, self.vocab_char_map).to(device)
+                text = list_str_to_idx(text, self.vocab_char_map, self.tokenizer_type).to(device)
             else:
                 text = list_str_to_tensor(text).to(device)
             assert text.shape[0] == batch

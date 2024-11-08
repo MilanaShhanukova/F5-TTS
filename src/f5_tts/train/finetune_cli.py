@@ -47,7 +47,7 @@ def parse_args():
     parser.add_argument("--finetune", type=bool, default=True, help="Use Finetune")
     parser.add_argument("--pretrain", type=str, default=None, help="the path to the checkpoint")
     parser.add_argument(
-        "--tokenizer", type=str, default="pinyin", choices=["pinyin", "char", "custom"], help="Tokenizer type"
+        "--tokenizer", type=str, default="pinyin", choices=["pinyin", "char", "custom", "ipa"], help="Tokenizer type"
     )
     parser.add_argument(
         "--tokenizer_path",
@@ -55,6 +55,7 @@ def parse_args():
         default=None,
         help="Path to custom tokenizer vocab file (only used if tokenizer = 'custom')",
     )
+    parser.add_argument('--tokenizer_type', type=str, default='char', help='The type of the tokenizer that will be used during training')
     parser.add_argument(
         "--log_samples",
         type=bool,
@@ -119,7 +120,7 @@ def main():
         tokenizer_path = args.dataset_name
 
     vocab_char_map, vocab_size = get_tokenizer(tokenizer_path, tokenizer)
-
+    print("tokenizer : ", tokenizer)
     print("\nvocab : ", vocab_size)
 
     mel_spec_kwargs = dict(
@@ -132,6 +133,7 @@ def main():
         transformer=model_cls(**model_cfg, text_num_embeds=vocab_size, mel_dim=n_mel_channels),
         mel_spec_kwargs=mel_spec_kwargs,
         vocab_char_map=vocab_char_map,
+        tokenizer_type=args.tokenizer_type
     )
 
     trainer = Trainer(
@@ -153,9 +155,10 @@ def main():
         log_samples=args.log_samples,
         last_per_steps=args.last_per_steps,
         bnb_optimizer=args.bnb_optimizer,
+        vocab_size=vocab_size
     )
 
-    train_dataset = load_dataset(args.dataset_name, tokenizer, mel_spec_kwargs=mel_spec_kwargs)
+    train_dataset = load_dataset(args.dataset_name, args.tokenizer, mel_spec_kwargs=mel_spec_kwargs)
 
     trainer.train(
         train_dataset,

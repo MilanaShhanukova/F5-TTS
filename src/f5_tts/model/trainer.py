@@ -16,9 +16,7 @@ from tqdm import tqdm
 
 from f5_tts.model import CFM
 from f5_tts.model.dataset import DynamicBatchSampler, collate_fn
-from f5_tts.model.utils import default, exists
-
-# trainer
+from f5_tts.model.utils import default, exists, expand_model_embeddings
 
 
 class Trainer:
@@ -47,6 +45,7 @@ class Trainer:
         ema_kwargs: dict = dict(),
         bnb_optimizer: bool = False,
         mel_spec_type: str = "vocos",  # "vocos" | "bigvgan"
+        vocab_size: int = 0
     ):
         ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
 
@@ -121,6 +120,7 @@ class Trainer:
         else:
             self.optimizer = AdamW(model.parameters(), lr=learning_rate)
         self.model, self.optimizer = self.accelerator.prepare(self.model, self.optimizer)
+        self.vocab_size = vocab_size
 
     @property
     def is_main(self):
@@ -139,10 +139,13 @@ class Trainer:
             if not os.path.exists(self.checkpoint_path):
                 os.makedirs(self.checkpoint_path)
             if last:
-                self.accelerator.save(checkpoint, f"{self.checkpoint_path}/model_last.pt")
-                print(f"Saved last checkpoint at step {step}")
+                checkpoint_file = f"{self.checkpoint_path}/model_last.pt"
+                self.accelerator.save(checkpoint, checkpoint_file)
+                print(f"Saved last checkpoint at step {step} in the file checkpoint_file {checkpoint_file}")
             else:
-                self.accelerator.save(checkpoint, f"{self.checkpoint_path}/model_{step}.pt")
+                checkpoint_file = f"{self.checkpoint_path}/model_{step}.pt"
+                self.accelerator.save(checkpoint, checkpoint_file)
+            return checkpoint_file
 
     def load_checkpoint(self):
         if (
@@ -160,8 +163,27 @@ class Trainer:
                 [f for f in os.listdir(self.checkpoint_path) if f.endswith(".pt")],
                 key=lambda x: int("".join(filter(str.isdigit, x))),
             )[-1]
-        # checkpoint = torch.load(f"{self.checkpoint_path}/{latest_checkpoint}", map_location=self.accelerator.device)  # rather use accelerator.load_state ಥ_ಥ
-        checkpoint = torch.load(f"{self.checkpoint_path}/{latest_checkpoint}", weights_only=True, map_location="cpu")
+
+        checkpoint_path = f"{self.checkpoint_path}/{latest_checkpoint}"
+        checkpoint_path = os.path.abspath(checkpoint_path)
+        # if self.add_tokens:
+        checkpoint_path_folder, tail = os.path.split(checkpoint_path)
+        tail = "expanded_" + tail
+        new_checkpoint_path = os.path.join(checkpoint_path_folder, tail)
+        new_checkpoint_path = expand_model_embeddings(
+            checkpoint_path,
+            new_checkpoint_path,
+            vocab_size=self.vocab_size
+        )
+        checkpoint_path = new_checkpoint_path
+
+        try:
+            print(f"loading the checkpoint {checkpoint_path}")
+            checkpoint = torch.load(checkpoint_path, weights_only=True, map_location="cpu")
+        except:
+            print(f"Error loading checkpoint", f'{self.checkpoint_path}/{latest_checkpoint}')
+            return 0
+
 
         # patch for backward compatibility, 305e3ea
         for key in ["ema_model.mel_spec.mel_stft.mel_scale.fb", "ema_model.mel_spec.mel_stft.spectrogram.window"]:
