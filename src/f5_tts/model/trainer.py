@@ -159,14 +159,18 @@ class Trainer:
         if "model_last.pt" in os.listdir(self.checkpoint_path):
             latest_checkpoint = "model_last.pt"
         else:
-            latest_checkpoint = sorted(
+            checkpoints = sorted(
                 [f for f in os.listdir(self.checkpoint_path) if f.endswith(".pt")],
                 key=lambda x: int("".join(filter(str.isdigit, x))),
-            )[-1]
+            )
+            if len(checkpoints) > 1: # not only 120k pretrained step
+                checkpoints = [c for c in checkpoints if "1200000" not in c]
+
+            latest_checkpoint = checkpoints[-1]
+
 
         checkpoint_path = f"{self.checkpoint_path}/{latest_checkpoint}"
         checkpoint_path = os.path.abspath(checkpoint_path)
-        # if self.add_tokens:
         checkpoint_path_folder, tail = os.path.split(checkpoint_path)
         tail = "expanded_" + tail
         new_checkpoint_path = os.path.join(checkpoint_path_folder, tail)
@@ -176,9 +180,9 @@ class Trainer:
             vocab_size=self.vocab_size
         )
         checkpoint_path = new_checkpoint_path
+        print(f"Try loading the checkpoint from {checkpoint_path}")
 
         try:
-            print(f"loading the checkpoint {checkpoint_path}")
             checkpoint = torch.load(checkpoint_path, weights_only=True, map_location="cpu")
         except:
             print(f"Error loading checkpoint", f'{self.checkpoint_path}/{latest_checkpoint}')
