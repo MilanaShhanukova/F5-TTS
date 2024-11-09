@@ -183,19 +183,19 @@ def load_model(
     ckpt_path,
     mel_spec_type=mel_spec_type,
     vocab_file="",
+    tokenizer_type="custom",
     ode_method=ode_method,
     use_ema=True,
     device=device,
 ):
     if vocab_file == "":
         vocab_file = str(files("f5_tts").joinpath("infer/examples/vocab.txt"))
-    tokenizer = "custom"
 
     print("\nvocab : ", vocab_file)
-    print("tokenizer : ", tokenizer)
+    print("tokenizer : ", tokenizer_type)
     print("model : ", ckpt_path, "\n")
 
-    vocab_char_map, vocab_size = get_tokenizer(vocab_file, tokenizer)
+    vocab_char_map, vocab_size = get_tokenizer(vocab_file, tokenizer_type)
     model = CFM(
         transformer=model_cls(**model_cfg, text_num_embeds=vocab_size, mel_dim=n_mel_channels),
         mel_spec_kwargs=dict(

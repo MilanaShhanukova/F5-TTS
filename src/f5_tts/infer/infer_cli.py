@@ -33,6 +33,7 @@ parser.add_argument(
 parser.add_argument(
     "-m",
     "--model",
+    default="F5-TTS",
     help="F5-TTS | E2-TTS",
 )
 parser.add_argument(
@@ -44,6 +45,11 @@ parser.add_argument(
     "-v",
     "--vocab_file",
     help="The vocab .txt",
+)
+parser.add_argument(
+    "-t_t",
+    "--tokenizer_type",
+    help="The type of the tokenizer custom, ipa, pinyin",
 )
 parser.add_argument("-r", "--ref_audio", type=str, help="Reference audio file < 15 seconds.")
 parser.add_argument("-s", "--ref_text", type=str, default="666", help="Subtitle for the reference audio.")
@@ -154,7 +160,7 @@ elif model == "E2-TTS":
 
 
 print(f"Using {model}...")
-ema_model = load_model(model_cls, model_cfg, ckpt_file, mel_spec_type=args.vocoder_name, vocab_file=vocab_file)
+ema_model = load_model(model_cls, model_cfg, ckpt_file, mel_spec_type=args.vocoder_name, vocab_file=vocab_file, tokenizer_type=args.tokenizer_type)
 
 
 def main_process(ref_audio, ref_text, text_gen, model_obj, mel_spec_type, remove_silence, speed):
@@ -213,7 +219,8 @@ def main_process(ref_audio, ref_text, text_gen, model_obj, mel_spec_type, remove
 
 
 def main():
-    main_process(ref_audio, ref_text, gen_text, ema_model, mel_spec_type, remove_silence, speed)
+    main_process(ref_audio, ref_text, gen_text,
+                ema_model, mel_spec_type, remove_silence, speed)
 
 
 if __name__ == "__main__":
