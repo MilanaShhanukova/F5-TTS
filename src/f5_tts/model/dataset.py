@@ -52,8 +52,6 @@ class HFDataset(Dataset):
         row = self.data[index]
         audio = row["audio"]["array"]
 
-        # logger.info(f"Audio shape: {audio.shape}")
-
         sample_rate = row["audio"]["sampling_rate"]
         duration = audio.shape[-1] / sample_rate
 
@@ -142,6 +140,9 @@ class CustomDataset(Dataset):
 
             if duration > 30 or duration < 0.3:
                 return self.__getitem__((index + 1) % len(self.data))
+
+            if audio.shape[0] == 2:
+                audio = torch.mean(audio, 0).unsqueeze(0)
 
             if source_sample_rate != self.target_sample_rate:
                 resampler = torchaudio.transforms.Resample(source_sample_rate, self.target_sample_rate)
