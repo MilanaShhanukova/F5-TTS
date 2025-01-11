@@ -29,11 +29,10 @@ def is_csv_wavs_format(input_dataset_dir):
     return metadata.exists() and metadata.is_file() and wavs.exists() and wavs.is_dir()
 
 
-def prepare_csv_wavs_dir(input_dir):
-    assert is_csv_wavs_format(input_dir), f"not csv_wavs format: {input_dir}"
+def prepare_csv_wavs_dir(input_dir, metadata_path):
     input_dir = Path(input_dir)
-    metadata_path = input_dir / "metadata.csv"
-    audio_path_text_pairs = read_audio_text_pairs(metadata_path.as_posix())
+    audio_path_text_pairs = read_audio_text_pairs(metadata_path, parent_dir=input_dir)
+
 
     sub_result, durations = [], []
     vocab_set = set()
@@ -57,10 +56,11 @@ def get_audio_duration(audio_path):
     return audio.shape[1] / sample_rate
 
 
-def read_audio_text_pairs(csv_file_path):
+def read_audio_text_pairs(csv_file_path, parent_dir):
     audio_text_pairs = []
 
-    parent = Path(csv_file_path).parent
+    parent = Path(parent_dir)
+
     with open(csv_file_path, mode="r", newline="", encoding="utf-8-sig") as csvfile:
         reader = csv.reader(csvfile, delimiter="|")
         next(reader)  # Skip the header row
@@ -115,24 +115,25 @@ def save_prepped_dataset(out_dir, result, duration_list, text_vocab_set, is_fine
     print(f"For {dataset_name}, total {sum(duration_list)/3600:.2f} hours")
 
 
-def prepare_and_save_set(inp_dir, out_dir, is_finetune: bool = True):
+def prepare_and_save_set(inp_dir, out_dir, metadata_path, is_finetune: bool = True):
     if is_finetune:
         assert PRETRAINED_VOCAB_PATH.exists(), f"pretrained vocab.txt not found: {PRETRAINED_VOCAB_PATH}"
-    sub_result, durations, vocab_set = prepare_csv_wavs_dir(inp_dir)
+    sub_result, durations, vocab_set = prepare_csv_wavs_dir(inp_dir, metadata_path)
     save_prepped_dataset(out_dir, sub_result, durations, vocab_set, is_finetune)
 
 
 def cli():
-    # finetune: python scripts/prepare_csv_wavs.py /path/to/input_dir /path/to/output_dir_pinyin
-    # pretrain: python scripts/prepare_csv_wavs.py /path/to/output_dir_pinyin --pretrain
+    # python f5_tts/train/datasets/prepare_csv_wavs.py --inp_dir ./data/vits_data/ --out_dir /F5-TTS/data/
+      
     parser = argparse.ArgumentParser(description="Prepare and save dataset.")
-    parser.add_argument("inp_dir", type=str, help="Input directory containing the data.")
-    parser.add_argument("out_dir", type=str, help="Output directory to save the prepared data.")
+    parser.add_argument("--inp_dir", type=str, help="Input directory containing the data.")
+    parser.add_argument("--out_dir", type=str, help="Output directory to save the prepared data.")
     parser.add_argument("--pretrain", action="store_true", help="Enable for new pretrain, otherwise is a fine-tune")
+    parser.add_argument("--metadata_path", type=str, help="Metadata_path")
 
     args = parser.parse_args()
 
-    prepare_and_save_set(args.inp_dir, args.out_dir, is_finetune=not args.pretrain)
+    prepare_and_save_set(args.inp_dir, args.out_dir, is_finetune=not args.pretrain, metadata_path=args.metadata_path)
 
 
 if __name__ == "__main__":
