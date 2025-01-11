@@ -28,6 +28,8 @@ from f5_tts.model.utils import (
     get_tokenizer,
     convert_char_to_pinyin,
 )
+from langdetect import detect
+
 
 _ref_audio_cache = {}
 
@@ -318,6 +320,14 @@ def preprocess_ref_audio_text(ref_audio_orig, ref_text, clip_short=True, show_in
 
 # infer process: chunk text -> infer batches [i.e. infer_batch_process()]
 
+def calculate_text_length(text: str):
+    text_lang = detect(text)
+
+    if text_lang != "ru":
+        length = len(text.encode("utf-8")) # add the lang identification
+    else:
+        length = len(text)
+    return length
 
 def infer_process(
     ref_audio,
@@ -339,11 +349,9 @@ def infer_process(
 ):
     # Split the input text into batches
     audio, sr = torchaudio.load(ref_audio)
-    max_chars = int(len(ref_text.encode("utf-8")) / (audio.shape[-1] / sr) * (25 - audio.shape[-1] / sr))
+    ref_len = calculate_text_length(ref_text)
+    max_chars = int(ref_len / (audio.shape[-1] / sr) * (25 - audio.shape[-1] / sr))
     gen_text_batches = chunk_text(gen_text, max_chars=max_chars)
-    for i, gen_text in enumerate(gen_text_batches):
-        print(f"gen_text {i}", gen_text)
-
     show_info(f"Generating audio in {len(gen_text_batches)} batches...")
     return infer_batch_process(
         (audio, sr),
@@ -410,9 +418,9 @@ def infer_batch_process(
         if fix_duration is not None:
             duration = int(fix_duration * target_sample_rate / hop_length)
         else:
-            # Calculate duration
-            ref_text_len = len(ref_text.encode("utf-8"))
-            gen_text_len = len(gen_text.encode("utf-8"))
+            ref_text_len = calculate_text_length(ref_text)
+            gen_text_len = calculate_text_length(gen_text)
+            
             duration = ref_audio_len + int(ref_audio_len / ref_text_len * gen_text_len / speed)
 
         # inference

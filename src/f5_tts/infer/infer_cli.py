@@ -28,7 +28,9 @@ parser.add_argument(
     "-c",
     "--config",
     help="Configuration file. Default=infer/examples/basic/basic.toml",
-    default=os.path.join(files("f5_tts").joinpath("infer/examples/basic"), "basic.toml"),
+    default=os.path.join(
+        files("f5_tts").joinpath("infer/examples/basic"), "basic.toml"
+    ),
 )
 parser.add_argument(
     "-m",
@@ -40,19 +42,29 @@ parser.add_argument(
     "-p",
     "--ckpt_file",
     help="The Checkpoint .pt",
+    default="/home/milana/TTS/F5-TTS/ckpts/rus_letters/model_760000.pt",
 )
 parser.add_argument(
     "-v",
     "--vocab_file",
     help="The vocab .txt",
+    default="/home/milana/TTS/F5-TTS/ckpts/rus_letters/vocab.txt",
 )
 parser.add_argument(
     "-t_t",
     "--tokenizer_type",
     help="The type of the tokenizer custom, ipa, pinyin",
 )
-parser.add_argument("-r", "--ref_audio", type=str, help="Reference audio file < 15 seconds.")
-parser.add_argument("-s", "--ref_text", type=str, default="666", help="Subtitle for the reference audio.")
+parser.add_argument(
+    "-r", "--ref_audio", type=str, help="Reference audio file < 15 seconds."
+)
+parser.add_argument(
+    "-s",
+    "--ref_text",
+    type=str,
+    default="666",
+    help="Subtitle for the reference audio.",
+)
 parser.add_argument(
     "-t",
     "--gen_text",
@@ -75,7 +87,13 @@ parser.add_argument(
     "--remove_silence",
     help="Remove silence.",
 )
-parser.add_argument("--vocoder_name", type=str, default="vocos", choices=["vocos", "bigvgan"], help="vocoder name")
+parser.add_argument(
+    "--vocoder_name",
+    type=str,
+    default="vocos",
+    choices=["vocos", "bigvgan"],
+    help="vocoder name",
+)
 parser.add_argument(
     "--load_vocoder_from_local",
     action="store_true",
@@ -87,6 +105,8 @@ parser.add_argument(
     default=1.0,
     help="Adjust the speed of the audio generation (default: 1.0)",
 )
+parser.add_argument("--file_name", type=str, default="infer_cli_out.wav")
+parser.add_argument("--fix_duration", type=str, default=None)
 args = parser.parse_args()
 
 config = tomli.load(open(args.config, "rb"))
@@ -105,7 +125,9 @@ if "voices" in config:
     for voice in config["voices"]:
         voice_ref_audio = config["voices"][voice]["ref_audio"]
         if "infer/examples/" in voice_ref_audio:
-            config["voices"][voice]["ref_audio"] = str(files("f5_tts").joinpath(f"{voice_ref_audio}"))
+            config["voices"][voice]["ref_audio"] = str(
+                files("f5_tts").joinpath(f"{voice_ref_audio}")
+            )
 
 if gen_file:
     gen_text = codecs.open(gen_file, "r", "utf-8").read()
@@ -113,35 +135,49 @@ output_dir = args.output_dir if args.output_dir else config["output_dir"]
 model = args.model if args.model else config["model"]
 ckpt_file = args.ckpt_file if args.ckpt_file else ""
 vocab_file = args.vocab_file if args.vocab_file else ""
-remove_silence = args.remove_silence if args.remove_silence else config["remove_silence"]
+remove_silence = (
+    args.remove_silence if args.remove_silence else config["remove_silence"]
+)
 speed = args.speed
-wave_path = Path(output_dir) / "infer_cli_out.wav"
-# spectrogram_path = Path(output_dir) / "infer_cli_out.png"
+
+wave_path = Path(output_dir) / args.file_name
 if args.vocoder_name == "vocos":
     vocoder_local_path = "../checkpoints/vocos-mel-24khz"
 elif args.vocoder_name == "bigvgan":
     vocoder_local_path = "../checkpoints/bigvgan_v2_24khz_100band_256x"
 mel_spec_type = args.vocoder_name
 
-vocoder = load_vocoder(vocoder_name=mel_spec_type, is_local=args.load_vocoder_from_local, local_path=vocoder_local_path)
+vocoder = load_vocoder(
+    vocoder_name=mel_spec_type,
+    is_local=args.load_vocoder_from_local,
+    local_path=vocoder_local_path,
+)
 
 
 # load models
 if model == "F5-TTS":
     model_cls = DiT
-    model_cfg = dict(dim=1024, depth=22, heads=16, ff_mult=2, text_dim=512, conv_layers=4)
+    model_cfg = dict(
+        dim=1024, depth=22, heads=16, ff_mult=2, text_dim=512, conv_layers=4
+    )
     if ckpt_file == "":
         if args.vocoder_name == "vocos":
             repo_name = "F5-TTS"
             exp_name = "F5TTS_Base"
             ckpt_step = 1200000
-            ckpt_file = str(cached_path(f"hf://SWivid/{repo_name}/{exp_name}/model_{ckpt_step}.safetensors"))
+            ckpt_file = str(
+                cached_path(
+                    f"hf://SWivid/{repo_name}/{exp_name}/model_{ckpt_step}.safetensors"
+                )
+            )
             # ckpt_file = f"ckpts/{exp_name}/model_{ckpt_step}.pt"  # .pt | .safetensors; local path
         elif args.vocoder_name == "bigvgan":
             repo_name = "F5-TTS"
             exp_name = "F5TTS_Base_bigvgan"
             ckpt_step = 1250000
-            ckpt_file = str(cached_path(f"hf://SWivid/{repo_name}/{exp_name}/model_{ckpt_step}.pt"))
+            ckpt_file = str(
+                cached_path(f"hf://SWivid/{repo_name}/{exp_name}/model_{ckpt_step}.pt")
+            )
 
 elif model == "E2-TTS":
     model_cls = UNetT
@@ -150,20 +186,43 @@ elif model == "E2-TTS":
         repo_name = "E2-TTS"
         exp_name = "E2TTS_Base"
         ckpt_step = 1200000
-        ckpt_file = str(cached_path(f"hf://SWivid/{repo_name}/{exp_name}/model_{ckpt_step}.safetensors"))
+        ckpt_file = str(
+            cached_path(
+                f"hf://SWivid/{repo_name}/{exp_name}/model_{ckpt_step}.safetensors"
+            )
+        )
         # ckpt_file = f"ckpts/{exp_name}/model_{ckpt_step}.pt"  # .pt | .safetensors; local path
     elif args.vocoder_name == "bigvgan":  # TODO: need to test
         repo_name = "F5-TTS"
         exp_name = "F5TTS_Base_bigvgan"
         ckpt_step = 1250000
-        ckpt_file = str(cached_path(f"hf://SWivid/{repo_name}/{exp_name}/model_{ckpt_step}.pt"))
+        ckpt_file = str(
+            cached_path(f"hf://SWivid/{repo_name}/{exp_name}/model_{ckpt_step}.pt")
+        )
 
 
 print(f"Using {model}...")
-ema_model = load_model(model_cls, model_cfg, ckpt_file, mel_spec_type=args.vocoder_name, vocab_file=vocab_file, tokenizer_type=args.tokenizer_type)
+print(f"Loading the checkoint path {ckpt_file}")
+ema_model = load_model(
+    model_cls,
+    model_cfg,
+    ckpt_file,
+    mel_spec_type=args.vocoder_name,
+    vocab_file=vocab_file,
+    tokenizer_type=args.tokenizer_type,
+)
 
 
-def main_process(ref_audio, ref_text, text_gen, model_obj, mel_spec_type, remove_silence, speed):
+def main_process(
+    ref_audio,
+    ref_text,
+    text_gen,
+    model_obj,
+    mel_spec_type,
+    remove_silence,
+    speed,
+    fix_duration,
+):
     main_voice = {"ref_audio": ref_audio, "ref_text": ref_text}
     if "voices" not in config:
         voices = {"main": main_voice}
@@ -171,8 +230,10 @@ def main_process(ref_audio, ref_text, text_gen, model_obj, mel_spec_type, remove
         voices = config["voices"]
         voices["main"] = main_voice
     for voice in voices:
-        voices[voice]["ref_audio"], voices[voice]["ref_text"] = preprocess_ref_audio_text(
-            voices[voice]["ref_audio"], voices[voice]["ref_text"]
+        voices[voice]["ref_audio"], voices[voice]["ref_text"] = (
+            preprocess_ref_audio_text(
+                voices[voice]["ref_audio"], voices[voice]["ref_text"]
+            )
         )
         print("Voice:", voice)
         print("Ref_audio:", voices[voice]["ref_audio"])
@@ -200,7 +261,14 @@ def main_process(ref_audio, ref_text, text_gen, model_obj, mel_spec_type, remove
         ref_text = voices[voice]["ref_text"]
         print(f"Voice: {voice}")
         audio, final_sample_rate, spectragram = infer_process(
-            ref_audio, ref_text, gen_text, model_obj, vocoder, mel_spec_type=mel_spec_type, speed=speed
+            ref_audio,
+            ref_text,
+            gen_text,
+            model_obj,
+            vocoder,
+            mel_spec_type=mel_spec_type,
+            speed=speed,
+            fix_duration=fix_duration,
         )
         generated_audio_segments.append(audio)
 
@@ -219,8 +287,16 @@ def main_process(ref_audio, ref_text, text_gen, model_obj, mel_spec_type, remove
 
 
 def main():
-    main_process(ref_audio, ref_text, gen_text,
-                ema_model, mel_spec_type, remove_silence, speed)
+    main_process(
+        ref_audio,
+        ref_text,
+        gen_text,
+        ema_model,
+        mel_spec_type,
+        remove_silence,
+        speed,
+        fix_duration,
+    )
 
 
 if __name__ == "__main__":
